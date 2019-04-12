@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ template "external-kong-ingress-controller.fullname" . }}-proxy
+  labels:
+    app: {{ template "external-kong-ingress-controller.name" . }}
+    chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+    release: "{{ .Release.Name }}"
+    heritage: "{{ .Release.Service }}"
+spec:
+  type: ExternalName
+  externalName: {{ .Values.kong.address }}
+  ports:
+  - name: proxy
+    port: {{ .Values.kong.proxy_port }}
+    targetPort: {{ .Values.kong.proxy_port }}
+

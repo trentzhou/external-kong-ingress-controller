@@ -1,0 +1,83 @@
+apiVersion: apps/v1beta2
+kind: Deployment
+metadata:
+  name: "{{ template "external-kong-ingress-controller.fullname" . }}-controller"
+  labels:
+    app: "{{ template "external-kong-ingress-controller.name" . }}"
+    chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+    release: "{{ .Release.Name }}"
+    heritage: "{{ .Release.Service }}"
+    component: "controller"
+spec:
+  replicas: {{ .Values.ingressController.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ template "external-kong-ingress-controller.name" . }}
+      release: {{ .Release.Name }}
+      component: "controller"
+  template:
+    metadata:
+    {{- if .Values.podAnnotations }}
+      annotations:
+{{ toYaml .Values.podAnnotations | indent 8 }}
+    {{- end }}
+      labels:
+        app: {{ template "external-kong-ingress-controller.name" . }}
+        release: {{ .Release.Name }}
+        component: "controller"
+    spec:
+      serviceAccountName: {{ template "external-kong-ingress-controller.serviceAccountName" . }}
+      
+      containers:
+      - name: ingress-controller
+        args:
+        - /kong-ingress-controller
+        - --kong-outside-kubernetes
+        # the default service is the kong proxy service
+        - --default-backend-service={{ .Release.Namespace }}/{{ template "external-kong-ingress-controller.fullname" . }}-proxy
+        # Service from were we extract the IP address/es to use in Ingress status
+        - --publish-service={{ .Release.Namespace }}/{{ template "external-kong-ingress-controller.fullname" . }}-proxy
+        # Set the ingress class
+        - --ingress-class={{ .Values.ingressController.ingressClass }}
+        - --election-id=kong-ingress-controller-leader-{{ .Values.ingressController.ingressClass }}
+        # the kong URL points to the kong admin api server
+        {{- if .Values.kong.admin_using_tls }}
+        - --kong-url=https://{{ .Values.kong.address}}:{{ .Values.kong.admin_port }}
+        - --admin-tls-skip-verify # TODO make this configurable
+        {{- else }}
+        - --kong-url=http://{{ .Values.kong.address}}:{{ .Values.kong.admin_port }}
+        {{- end }}
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /healthz
+            port: 10254
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /healthz
+            port: 10254
+            scheme: HTTP
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources:
+{{ toYaml .Values.ingressController.resources | indent 10 }}
